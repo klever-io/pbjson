@@ -349,7 +349,8 @@ fn write_serialize_scalar_variable<W: Write>(
     writer: &mut W,
 ) -> Result<()> {
     let conversion = match scalar {
-        ScalarType::I64 | ScalarType::U64 => "ToString::to_string",
+        // remove i64/u64 from scalar convert to string...
+        // ScalarType::I64 | ScalarType::U64 => "ToString::to_string",
         ScalarType::Bytes => "pbjson::private::base64::encode",
         _ => {
             return writeln!(
