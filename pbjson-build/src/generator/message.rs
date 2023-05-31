@@ -41,6 +41,8 @@ pub fn generate_message<W: Write>(
     btree_map_paths: &[String],
     emit_fields: bool,
     preserve_proto_field_names: bool,
+    use_number_for_ui64: bool,
+    use_hex_for_bytes: bool,
 ) -> Result<()> {
     let rust_type = resolver.rust_type(&message.path);
 
@@ -53,6 +55,8 @@ pub fn generate_message<W: Write>(
         writer,
         emit_fields,
         preserve_proto_field_names,
+        use_number_for_ui64,
+        use_hex_for_bytes,
     )?;
     write_serialize_end(0, writer)?;
 
@@ -115,6 +119,8 @@ fn write_message_serialize<W: Write>(
     writer: &mut W,
     emit_fields: bool,
     preserve_proto_field_names: bool,
+    use_number_for_ui64: bool,
+    use_hex_for_bytes: bool,
 ) -> Result<()> {
     write_struct_serialize_start(indent, message, writer, emit_fields)?;
 
@@ -126,11 +132,21 @@ fn write_message_serialize<W: Write>(
             writer,
             emit_fields,
             preserve_proto_field_names,
+            use_number_for_ui64,
+            use_hex_for_bytes,
         )?;
     }
 
     for one_of in &message.one_ofs {
-        write_serialize_one_of(indent, resolver, one_of, writer, preserve_proto_field_names)?;
+        write_serialize_one_of(
+            indent,
+            resolver,
+            one_of,
+            writer,
+            preserve_proto_field_names,
+            use_number_for_ui64,
+            use_hex_for_bytes,
+        )?;
     }
 
     write_struct_serialize_end(indent, writer)
@@ -235,6 +251,8 @@ fn write_serialize_variable<W: Write>(
     variable: Variable<'_>,
     writer: &mut W,
     preserve_proto_field_names: bool,
+    use_number_for_ui64: bool,
+    use_hex_for_bytes: bool,
 ) -> Result<()> {
     let json_name = field.json_name();
     let field_name = if preserve_proto_field_names {
@@ -250,6 +268,8 @@ fn write_serialize_variable<W: Write>(
             variable,
             field_name,
             writer,
+            use_number_for_ui64,
+            use_hex_for_bytes,
         ),
         FieldType::Enum(path) => {
             write!(writer, "{}let v = ", Indent(indent))?;
@@ -347,11 +367,13 @@ fn write_serialize_scalar_variable<W: Write>(
     variable: Variable<'_>,
     field_name: &str,
     writer: &mut W,
+    use_number_for_ui64: bool,
+    use_hex_for_bytes: bool,
 ) -> Result<()> {
     let conversion = match scalar {
-        // remove i64/u64 from scalar convert to string...
-        // ScalarType::I64 | ScalarType::U64 => "ToString::to_string",
-        ScalarType::Bytes => "pbjson::private::base64::encode",
+        // optional convert scalar i64/u64 to string...
+        ScalarType::I64 | ScalarType::U64 if !use_number_for_ui64 => "ToString::to_string",
+        ScalarType::Bytes  => "pbjson::private::base64::encode",
         _ => {
             return writeln!(
                 writer,
@@ -394,6 +416,8 @@ fn write_serialize_field<W: Write>(
     writer: &mut W,
     emit_fields: bool,
     preserve_proto_field_names: bool,
+    use_number_for_ui64: bool,
+    use_hex_for_bytes: bool,
 ) -> Result<()> {
     let as_ref = format!("&self.{}", field.rust_field_name());
     let variable = Variable {
@@ -411,6 +435,8 @@ fn write_serialize_field<W: Write>(
                 variable,
                 writer,
                 preserve_proto_field_names,
+                use_number_for_ui64,
+                use_hex_for_bytes,
             )?;
         }
         FieldModifier::Optional => {
@@ -432,6 +458,8 @@ fn write_serialize_field<W: Write>(
                 variable,
                 writer,
                 preserve_proto_field_names,
+                use_number_for_ui64,
+                use_hex_for_bytes,
             )?;
             writeln!(writer, "{}}}", Indent(indent))?;
         }
@@ -446,6 +474,8 @@ fn write_serialize_field<W: Write>(
                 variable,
                 writer,
                 preserve_proto_field_names,
+                use_number_for_ui64,
+                use_hex_for_bytes,
             )?;
             writeln!(writer, "{}}}", Indent(indent))?;
         }
@@ -459,6 +489,8 @@ fn write_serialize_one_of<W: Write>(
     one_of: &OneOf,
     writer: &mut W,
     preserve_proto_field_names: bool,
+    use_number_for_ui64: bool,
+    use_hex_for_bytes: bool,
 ) -> Result<()> {
     writeln!(
         writer,
@@ -488,6 +520,8 @@ fn write_serialize_one_of<W: Write>(
             variable,
             writer,
             preserve_proto_field_names,
+            use_number_for_ui64,
+            use_hex_for_bytes,
         )?;
         writeln!(writer, "{}}}", Indent(indent + 2))?;
     }

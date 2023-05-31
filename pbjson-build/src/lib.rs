@@ -108,6 +108,8 @@ pub struct Builder {
     emit_fields: bool,
     use_integers_for_enums: bool,
     preserve_proto_field_names: bool,
+    use_number_for_ui64: bool,
+    use_hex_for_bytes: bool,
 }
 
 impl Builder {
@@ -196,6 +198,18 @@ impl Builder {
     /// lowerCamelCase
     pub fn preserve_proto_field_names(&mut self) -> &mut Self {
         self.preserve_proto_field_names = true;
+        self
+    }
+
+    /// print number instead of string for u64 and i64
+    pub fn use_number_for_ui64(&mut self, value: bool) -> &mut Self {
+        self.use_number_for_ui64 = value;
+        self
+    }
+
+    /// enconde/decode bytes as HexString insead of default base64
+    pub fn use_hex_for_bytes(&mut self, value: bool) -> &mut Self {
+        self.use_hex_for_bytes = value;
         self
     }
 
@@ -288,6 +302,8 @@ impl Builder {
                             &self.btree_map_paths,
                             self.emit_fields,
                             self.preserve_proto_field_names,
+                            self.use_number_for_ui64,
+                            self.use_hex_for_bytes,
                         )?
                     }
                 }
