@@ -8,7 +8,7 @@
 //! - 32-bit integers and floats are encoded as numbers
 //! - 64-bit integers are encoded as strings
 //! - repeated fields are encoded as arrays
-//! - bytes are base64 encoded
+//! - bytes are base64 encoded (optional ban be set as hex string)
 //! - messages and maps are encoded as objects
 //! - fields are lowerCamelCase except where overridden by the proto definition
 //! - default values are not emitted on encode
@@ -70,6 +70,7 @@ pub fn generate_message<W: Write>(
         writer,
         ignore_unknown_fields,
         btree_map_paths,
+        use_hex_for_bytes,
     )?;
     write_deserialize_end(0, writer)?;
     Ok(())
@@ -373,7 +374,8 @@ fn write_serialize_scalar_variable<W: Write>(
     let conversion = match scalar {
         // optional convert scalar i64/u64 to string...
         ScalarType::I64 | ScalarType::U64 if !use_number_for_ui64 => "ToString::to_string",
-        ScalarType::Bytes  => "pbjson::private::base64::encode",
+        ScalarType::Bytes if use_hex_for_bytes => "pbjson::private::hex::encode",
+        ScalarType::Bytes => "pbjson::private::base64::encode",
         _ => {
             return writeln!(
                 writer,
@@ -538,6 +540,7 @@ fn write_deserialize_message<W: Write>(
     writer: &mut W,
     ignore_unknown_fields: bool,
     btree_map_paths: &[String],
+    bytes_as_hex: bool,
 ) -> Result<()> {
     write_deserialize_field_name(2, message, writer, ignore_unknown_fields)?;
 
@@ -593,7 +596,7 @@ fn write_deserialize_message<W: Write>(
             .any(|prefix| message.path.prefix_match(prefix.as_ref()).is_some());
 
         for field in &message.fields {
-            write_deserialize_field(resolver, indent + 4, field, None, btree_map, writer)?;
+            write_deserialize_field(resolver, indent + 4, field, None, btree_map, writer, bytes_as_hex)?;
         }
 
         for one_of in &message.one_ofs {
@@ -605,6 +608,7 @@ fn write_deserialize_message<W: Write>(
                     Some(one_of),
                     btree_map,
                     writer,
+                    bytes_as_hex
                 )?;
             }
         }
@@ -836,6 +840,7 @@ fn write_deserialize_field<W: Write>(
     one_of: Option<&OneOf>,
     btree_map: bool,
     writer: &mut W,
+    bytes_as_hex: bool,
 ) -> Result<()> {
     let field_name = match one_of {
         Some(one_of) => one_of.rust_field_name(),
@@ -868,7 +873,7 @@ fn write_deserialize_field<W: Write>(
 
     match one_of {
         Some(one_of) => match &field.field_type {
-            FieldType::Scalar(s) => match override_deserializer(*s) {
+            FieldType::Scalar(s) => match override_deserializer(*s, bytes_as_hex) {
                 Some(deserializer) => {
                     write!(
                         writer,
@@ -907,7 +912,7 @@ fn write_deserialize_field<W: Write>(
 
         None => match &field.field_type {
             FieldType::Scalar(scalar) => {
-                write_encode_scalar_field(indent + 1, *scalar, field.field_modifier, writer)?;
+                write_encode_scalar_field(indent + 1, *scalar, field.field_modifier, writer, bytes_as_hex)?;
             }
             FieldType::Enum(path) => match field.field_modifier {
                 FieldModifier::Optional => {
@@ -1015,8 +1020,9 @@ fn write_deserialize_field<W: Write>(
     writeln!(writer, "{}}}", Indent(indent))
 }
 
-fn override_deserializer(scalar: ScalarType) -> Option<&'static str> {
+fn override_deserializer(scalar: ScalarType, bytes_as_hex: bool) -> Option<&'static str> {
     match scalar {
+        ScalarType::Bytes if bytes_as_hex => Some("::pbjson::private::BytesHexDeserialize<_>"),
         ScalarType::Bytes => Some("::pbjson::private::BytesDeserialize<_>"),
         _ if scalar.is_numeric() => Some("::pbjson::private::NumberDeserialize<_>"),
         _ => None,
@@ -1028,8 +1034,9 @@ fn write_encode_scalar_field<W: Write>(
     scalar: ScalarType,
     field_modifier: FieldModifier,
     writer: &mut W,
+    bytes_as_hex: bool,
 ) -> Result<()> {
-    let deserializer = match override_deserializer(scalar) {
+    let deserializer = match override_deserializer(scalar, bytes_as_hex) {
         Some(deserializer) => deserializer,
         None => {
             return match field_modifier {

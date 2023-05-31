@@ -21,6 +21,8 @@
 pub mod private {
     /// Re-export base64
     pub use base64;
+    /// Re-export hex
+    pub use hex;
 
     use serde::de::Visitor;
     use serde::Deserialize;
@@ -99,6 +101,39 @@ pub mod private {
             D: serde::Deserializer<'de>,
         {
             Ok(Self(deserializer.deserialize_str(Base64Visitor)?.into()))
+        }
+    }
+
+    struct HexStringVisitor;
+
+    impl<'de> Visitor<'de> for HexStringVisitor {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("a hex string")
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            let decoded = hex::decode(s).map_err(serde::de::Error::custom)?;
+            Ok(decoded)
+        }
+    }
+
+    #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Hash, Ord, Eq)]
+    pub struct BytesHexDeserialize<T>(pub T);
+
+    impl<'de, T> Deserialize<'de> for BytesHexDeserialize<T>
+    where
+        T: From<Vec<u8>>,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            Ok(Self(deserializer.deserialize_str(HexStringVisitor)?.into()))
         }
     }
 
